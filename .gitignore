@@ -1,0 +1,30 @@
+# Environment / secrets
+.env
+.env.local
+.env.production
+backend/.env
+
+# Local document data
+backend/documents.json
+backend/uploads/
+
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+*.pyo
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
