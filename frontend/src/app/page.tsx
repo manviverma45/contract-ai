@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,6 +7,8 @@ import UploadBox from "../components/UploadBox";
 import DocumentList from "../components/DocumentList";
 import ChatPanel from "../components/ChatPanel";
 import ComparisonPanel from "../components/ComparisonPanel";
+
+import { API_URL } from "../lib/api";
 
 type DocumentItem = {
   id: string;
@@ -26,7 +29,7 @@ export default function Home() {
   async function loadDocuments() {
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/api/documents/",
+        `${API_URL}/documents/`,
         {
           cache: "no-store",
         }

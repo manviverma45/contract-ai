@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_URL } from "../lib/api";
 
 type DocumentItem = {
   id: string;
@@ -33,7 +34,7 @@ export default function DocumentList({
       setLoading(true);
 
       const response = await fetch(
-        "http://127.0.0.1:8000/api/documents/",
+        `${API_URL}/documents/`,
         { cache: "no-store" }
       );
 
@@ -65,7 +66,7 @@ export default function DocumentList({
       setDeletingId(document.id);
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/documents/${document.id}`,
+        `${API_URL}/documents/${document.id}`,
         {
           method: "DELETE",
         }

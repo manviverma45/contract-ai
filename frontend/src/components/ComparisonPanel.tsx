@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { API_URL } from "../lib/api";
 
 type DocumentItem = {
   id: string;
@@ -47,7 +48,7 @@ export default function ComparisonPanel({
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/api/comparison/",
+        `${API_URL}/comparison/`,
         {
           method: "POST",
           headers: {
