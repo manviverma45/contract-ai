@@ -1,41 +1,31 @@
-from sentence_transformers import SentenceTransformer
+import re
+from collections import Counter
 
 
-_model = None
-
-
-def get_model():
-    global _model
-
-    if _model is None:
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
-
-    return _model
-
-
-def create_embeddings(texts):
-    if not texts:
-        return []
-
-    model = get_model()
-
-    embeddings = model.encode(
-        texts,
-        normalize_embeddings=True
+def tokenize(text):
+    return re.findall(
+        r"\b[a-zA-Z0-9][a-zA-Z0-9_-]*\b",
+        text.lower()
     )
-
-    return embeddings.tolist()
 
 
 def create_embedding(text):
-    if not text:
-        return []
+    words = tokenize(text)
 
-    model = get_model()
+    if not words:
+        return {}
 
-    embedding = model.encode(
-        [text],
-        normalize_embeddings=True
-    )
+    counts = Counter(words)
+    total = len(words)
 
-    return embedding[0].tolist()
+    return {
+        word: count / total
+        for word, count in counts.items()
+    }
+
+
+def create_embeddings(texts):
+    return [
+        create_embedding(text)
+        for text in texts
+    ]

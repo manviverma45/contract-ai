@@ -1,55 +1,142 @@
-import faiss
-import numpy as np
+import math
+import re
+from collections import Counter
 
-from services.embeddings import create_embeddings, create_embedding
+from services.embeddings import create_embedding
+
+
+def tokenize(text):
+    return re.findall(
+        r"\b[a-zA-Z0-9][a-zA-Z0-9_-]*\b",
+        text.lower()
+    )
 
 
 def build_index(chunks):
     if not chunks:
         return None
 
-    texts = [chunk["text"] for chunk in chunks]
-    embeddings = np.array(
-        create_embeddings(texts),
-        dtype="float32"
+    documents = []
+
+    for chunk in chunks:
+        words = tokenize(chunk["text"])
+        counts = Counter(words)
+
+        documents.append({
+            "tf": counts,
+            "length": len(words)
+        })
+
+    document_frequency = Counter()
+
+    for document in documents:
+        for word in document["tf"]:
+            document_frequency[word] += 1
+
+    total_documents = len(documents)
+
+    idf = {}
+
+    for word, frequency in document_frequency.items():
+        idf[word] = math.log(
+            (total_documents + 1)
+            / (frequency + 1)
+        ) + 1
+
+    vectors = []
+
+    for document in documents:
+        vector = {}
+
+        for word, count in document["tf"].items():
+            vector[word] = (
+                (1 + math.log(count))
+                * idf.get(word, 1)
+            )
+
+        vectors.append(vector)
+
+    return {
+        "vectors": vectors,
+        "idf": idf
+    }
+
+
+def cosine_similarity(vector_a, vector_b):
+    if not vector_a or not vector_b:
+        return 0.0
+
+    common_words = set(vector_a) & set(vector_b)
+
+    if not common_words:
+        return 0.0
+
+    dot = sum(
+        vector_a[word] * vector_b[word]
+        for word in common_words
     )
 
-    dimension = embeddings.shape[1]
-    index = faiss.IndexFlatIP(dimension)
-    index.add(embeddings)
+    norm_a = math.sqrt(
+        sum(value * value for value in vector_a.values())
+    )
 
-    return index
+    norm_b = math.sqrt(
+        sum(value * value for value in vector_b.values())
+    )
+
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+
+    return dot / (norm_a * norm_b)
 
 
 def search_index(index, chunks, query, top_k=6):
-    if index is None or not chunks:
+    if not index or not chunks or not query:
         return []
 
-    query_embedding = np.array(
-        [create_embedding(query)],
-        dtype="float32"
-    )
+    query_words = tokenize(query)
 
-    limit = min(top_k, len(chunks))
+    if not query_words:
+        return []
 
-    scores, indices = index.search(
-        query_embedding,
-        limit
-    )
+    query_counts = Counter(query_words)
+    query_vector = {}
+
+    for word, count in query_counts.items():
+        query_vector[word] = (
+            (1 + math.log(count))
+            * index["idf"].get(word, 1)
+        )
 
     results = []
 
-    for score, index_position in zip(scores[0], indices[0]):
-        if index_position < 0:
+    for position, chunk in enumerate(chunks):
+        if position >= len(index["vectors"]):
             continue
 
-        chunk = chunks[index_position]
+        score = cosine_similarity(
+            query_vector,
+            index["vectors"][position]
+        )
 
-        results.append({
-            "text": chunk["text"],
-            "source": chunk.get("source", {}),
-            "chunk_index": chunk.get("chunk_index", 0),
-            "score": float(score)
-        })
+        # Small bonus when the complete query appears in the chunk.
+        query_text = " ".join(query_words)
+        chunk_text = " ".join(tokenize(chunk["text"]))
 
-    return results
+        if query_text and query_text in chunk_text:
+            score += 0.15
+
+        if score > 0:
+            results.append({
+                "text": chunk["text"],
+                "source": chunk.get("source", {}),
+                "chunk_index": chunk.get("chunk_index", 0),
+                "score": float(score)
+            })
+
+    results.sort(
+        key=lambda item: item["score"],
+        reverse=True
+    )
+
+    return results[:top_k]
