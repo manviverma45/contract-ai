@@ -373,140 +373,101 @@ def generate_answer(question, sources):
 
 
 def stream_answer(question, sources):
-
     if not sources:
-        yield (
-            "I could not find this information "
-            "in the document."
-        )
+        yield "I could not find this information in the document."
         return
 
-    prompt = build_prompt(
-        question,
-        sources
-    )
+    def send_fallback():
+        fallback = fallback_answer(question, sources)
 
-    client = get_client()
+        yield fallback["answer"]
 
-    for model in get_models():
+        metadata = json.dumps(
+            {
+                "quotes": fallback["quotes"]
+            },
+            ensure_ascii=False
+        )
 
-        try:
+        yield (
+            "\n__CONTRACT_AI_CITATIONS__"
+            + metadata
+        )
 
-            response_stream = (
-                client.models.generate_content_stream(
+    try:
+        prompt = build_prompt(question, sources)
+        client = get_client()
+
+        for model in get_models():
+
+            try:
+                response_stream = client.models.generate_content_stream(
                     model=model,
                     contents=prompt
                 )
-            )
 
-            full_response = ""
-            emitted_length = 0
+                full_response = ""
+                emitted_length = 0
 
-            for chunk in response_stream:
+                for chunk in response_stream:
 
-                text = getattr(
-                    chunk,
-                    "text",
-                    None
-                )
+                    text = getattr(chunk, "text", None)
 
-                if not text:
-                    continue
+                    if not text:
+                        continue
 
-                full_response += text
+                    full_response += text
 
-                start_match = re.search(
-                    r"<answer>\s*",
-                    full_response,
-                    flags=re.IGNORECASE
-                )
-
-                if not start_match:
-                    continue
-
-                answer_start = (
-                    start_match.end()
-                )
-
-                end_match = re.search(
-                    r"</answer>",
-                    full_response[
-                        answer_start:
-                    ],
-                    flags=re.IGNORECASE
-                )
-
-                if end_match:
-
-                    answer_end = (
-                        answer_start
-                        + end_match.start()
+                    start_match = re.search(
+                        r"<answer>\s*",
+                        full_response,
+                        flags=re.IGNORECASE
                     )
 
-                    visible_answer = (
-                        full_response[
-                            answer_start:
-                            answer_end
+                    if not start_match:
+                        continue
+
+                    answer_start = start_match.end()
+
+                    end_match = re.search(
+                        r"</answer>",
+                        full_response[answer_start:],
+                        flags=re.IGNORECASE
+                    )
+
+                    if end_match:
+                        answer_end = (
+                            answer_start + end_match.start()
+                        )
+
+                        visible_answer = full_response[
+                            answer_start:answer_end
                         ]
-                    )
-
-                else:
-
-                    visible_answer = (
-                        full_response[
+                    else:
+                        visible_answer = full_response[
                             answer_start:
                         ]
-                    )
 
-                if len(visible_answer) > emitted_length:
+                    if len(visible_answer) > emitted_length:
 
-                    new_text = (
-                        visible_answer[
+                        new_text = visible_answer[
                             emitted_length:
                         ]
-                    )
 
-                    emitted_length = len(
-                        visible_answer
-                    )
+                        emitted_length = len(visible_answer)
 
-                    if new_text:
-                        yield new_text
+                        if new_text:
+                            yield new_text
 
-            result = parse_model_response(
-                full_response
-            )
+                result = parse_model_response(full_response)
 
-            metadata = json.dumps(
-                {
-                    "quotes": result["quotes"]
-                },
-                ensure_ascii=False
-            )
-
-            yield (
-                "\n__CONTRACT_AI_CITATIONS__"
-                + metadata
-            )
-
-            return
-
-        except ClientError as error:
-
-            if is_quota_error(error):
-
-                fallback = fallback_answer(
-                    question,
-                    sources
-                )
-
-                yield fallback["answer"]
+                if not result["answer"]:
+                    yield from send_fallback()
+                    return
 
                 metadata = json.dumps(
                     {
-                        "quotes": fallback[
-                            "quotes"
-                        ]
+                        "quotes": result["quotes"]
                     },
                     ensure_ascii=False
                 )
@@ -518,30 +479,39 @@ def stream_answer(question, sources):
 
                 return
 
-            raise
+            except ClientError as error:
 
-        except ServerError as error:
+                if is_quota_error(error):
+                    yield from send_fallback()
+                    return
 
-            if error.code != 503:
-                raise
+                print("Gemini client error:", error)
 
-            time.sleep(2)
+            except ServerError as error:
 
-    fallback = fallback_answer(
-        question,
-        sources
-    )
+                print("Gemini server error:", error)
 
-    yield fallback["answer"]
+                if error.code == 503:
+                    time.sleep(2)
+                    continue
 
-    metadata = json.dumps(
-        {
-            "quotes": fallback["quotes"]
-        },
-        ensure_ascii=False
-    )
+            except Exception as error:
 
-    yield (
-        "\n__CONTRACT_AI_CITATIONS__"
-        + metadata
-    )
+                print(
+                    f"Gemini streaming error with {model}:",
+                    repr(error)
+                )
+
+                continue
+
+        # If every Gemini model fails
+        yield from send_fallback()
+
+    except Exception as error:
+
+        print(
+            "Chat streaming failed:",
+            repr(error)
+        )
+
+        yield from send_fallback()
