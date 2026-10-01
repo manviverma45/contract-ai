@@ -12,6 +12,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://contract-ai-phi.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -32,6 +33,7 @@ app.include_router(
     comparison_router,
     prefix="/api/comparison"
 )
+
 
 @app.get("/")
 def root():
